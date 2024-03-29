@@ -1,0 +1,62 @@
+import numpy as np
+import pandas as pd
+from fancyimpute import BiScaler
+from soft_impute import SoftImpute
+from functionsCF import GenerateTrainingSet
+
+# Reads the music ratings data from the file
+# Each row represents a user's rating for a particular music track
+rating = pd.read_csv('MusicRatings.csv', sep=',').values
+
+# Displays the top 5 rows of the ratings data
+print(rating[:5, :])
+
+# Creates an empty matrix to hold the incomplete ratings data
+matrix_incomplete = np.zeros((len(np.unique(rating[:,0])), len(np.unique(rating[:,1]))))
+
+# Adjusts the music IDs to ensure each column has ratings, as some music may not have any ratings
+usedID = np.unique(rating[:, 1]) 
+
+for i in range(len(rating[:,1])):
+    rating[:,1][i] = np.where(usedID==rating[:,1][i])[0][0] + 1
+
+# Fill the incomplete matrix with ratings data
+matrix_incomplete[:] = np.nan
+
+indices = np.array(rating[:,0] - 1).astype(int), np.array(rating[:,1] - 1).astype(int)
+
+matrix_incomplete[indices] = rating[:,2]
+
+# Generates index pairs for the training and validation sets
+train_indices, validation_indices = GenerateTrainingSet(rating[:,0], rating[:,1], 0.70)
+
+matrix_train = matrix_incomplete.copy()
+matrix_train[:] = np.nan
+matrix_train[train_indices] = matrix_incomplete[train_indices]
+
+# Prepares the data for softImpute by normalizing it with BiScaler
+biscaler = BiScaler(scale_rows=False, scale_columns=False, max_iters=50, verbose=False)
+
+matrix_train_normalized = biscaler.fit_transform(matrix_train)
+
+# Uses SoftImpute to complete the matrix
+softImpute = SoftImpute(J = 6, maxit = 200, random_seed = 2033, verbose = False)
+
+matrix_train_softImpute = softImpute.fit(matrix_train_normalized)
+
+matrix_train_filled_normalized = matrix_train_softImpute.predict(matrix_train_normalized, copyto = False)
+
+matrix_train_filled = biscaler.inverse_transform(matrix_train_filled_normalized)
+
+# Calculates out-of-sample R^2
+train_average = np.average(matrix_train[train_indices])
+
+validation_mse = ((matrix_train_filled[validation_indices] - matrix_incomplete[validation_indices]) ** 2).mean()
+training_mse = ((matrix_train_filled[train_indices] - matrix_incomplete[train_indices]) ** 2).mean()
+validation_mse_baseline = ((train_average - matrix_incomplete[validation_indices]) ** 2).mean()
+training_mse_baseline = ((train_average - matrix_incomplete[train_indices]) ** 2).mean()
+
+print("out-of-sample R2: %.4f, in-sample R2: %.4f." % (1 - validation_mse / validation_mse_baseline, 1 - training_mse / training_mse_baseline))
+
+# Checks a specific prediction after matrix completion
+print("After matrix completion =", matrix_train_filled[526,80])
