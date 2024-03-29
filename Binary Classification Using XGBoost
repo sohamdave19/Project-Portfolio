@@ -1,0 +1,71 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from datetime import datetime
+import warnings 
+import xgboost
+from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics import auc
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
+
+warnings.simplefilter(action="ignore", category=UserWarning)
+
+# Reads in the diabetes.csv dataset into "df" 
+df = pd.read_csv("diabetes.csv", index_col=False)
+
+# Finds the number of outcomes for both positive and negative. Normalize the result to get a percentage. 
+# Assign the output to "outcomes"
+outcomes = df.Outcome.value_counts(normalize=True)
+print(outcomes)
+
+# Sets "X" to all independent variables and sets "y" to the Outcome variable
+X = df.drop(['Outcome'], axis=1)
+y = df['Outcome']
+
+# Splits data into training and test sets: "X_train, X_test, y_train, y_test"
+# Test size should be 0.3 with random_state set to 7
+# Set "eval_set" to the combination of X_test and y_test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=7)
+eval_set = [(X_test, y_test)]
+print(X_train.shape, X_test.shape)
+
+# Encodes string class values as integers to avoid errors in newer versions of XGBoost
+from sklearn.preprocessing import LabelEncoder
+label_encoder = LabelEncoder()
+label_encoder = label_encoder.fit(y)
+y = label_encoder.transform(y)
+
+print('Initializing xgboost.sklearn.XGBClassifier and starting training...')
+
+#set "st" to the current datetime
+st = datetime.now()
+
+# Uses xgboost.sklearn.XGBClassifier to create a model called "clf"
+clf = xgboost.sklearn.XGBClassifier(
+    objective="binary:logistic", 
+    learning_rate=0.05, 
+    seed=9616, 
+    max_depth=20, 
+    gamma=10, 
+    n_estimators=500)
+
+# Fits the model with training data. Also use the following parameters:
+clf.fit(X_train, y_train, early_stopping_rounds=20, eval_metric="auc", eval_set=eval_set, verbose=False)
+
+print(datetime.now()-st)
+
+# set "y_pred" to the clf predictions on the test dataset. 
+y_pred = clf.predict(X_test)
+
+# Get the accuracy score of the model set the output to "accuracy".
+accuracy = accuracy_score(np.array(y_test).flatten(), y_pred)
+
+print("Accuracy: %.10f%%" % (accuracy * 100.0))
+
+# Gets ROC-AUC score for the model. 
+accuracy_per_roc_auc = roc_auc_score(np.array(y_test).flatten(), y_pred)
+
+print("ROC-AUC: %.10f%%" % (accuracy_per_roc_auc * 100))
